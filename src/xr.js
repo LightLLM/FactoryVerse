@@ -1,0 +1,27 @@
+/** Experimental WebXR scene. Immersive hand tracking requires compatible runtime. */
+import * as THREE from 'https://esm.sh/three@0.169.0';
+import {OrbitControls} from 'https://esm.sh/three@0.169.0/examples/jsm/controls/OrbitControls.js';
+import {XRHandModelFactory} from 'https://esm.sh/three@0.169.0/examples/jsm/webxr/XRHandModelFactory.js';
+import{createGame,assign,STATIONS,PEOPLE}from'./simulation.js';
+export async function startXR(stage,status){
+const scene=new THREE.Scene();scene.background=new THREE.Color('#061522');const camera=new THREE.PerspectiveCamera(65,1,.01,100);camera.position.set(0,1.35,2.8);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.xr.enabled=true;stage.appendChild(renderer.domElement);
+function resize(){const w=stage.clientWidth||800,h=stage.clientHeight||600;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h)}resize();window.addEventListener('resize',resize);
+const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,1.05,0);controls.enableDamping=true;
+scene.add(new THREE.HemisphereLight(0xdffaff,0x142f46,2.5));const lamp=new THREE.DirectionalLight(0xffffff,2.5);lamp.position.set(1.5,3,2);scene.add(lamp);
+const material=(color,emissive=.1)=>new THREE.MeshStandardMaterial({color,metalness:.3,roughness:.46,emissive:color,emissiveIntensity:emissive});
+function cube(w,h,d,color,x,y,z){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material(color));m.position.set(x,y,z);scene.add(m);return m}
+cube(1.9,.08,1.15,0x143447,0,.82,0);const grid=new THREE.GridHelper(1.9,12,0x2bd1ed,0x285064);grid.position.y=.865;scene.add(grid);
+for(let i=0;i<7;i++)cube(.18,.04,.13,0x5e8fa3,-.75+i*.24,.9,.09);
+const pickables=[],positions={cut:[-.62,-.24],assembly:[0,-.35],pack:[.63,-.15]};let game=createGame(),selected=null;
+for(const station of STATIONS){const[x,z]=positions[station.id];const m=cube(.36,.29,.28,station.id==='pack'?0xe76a7b:0x3a8b97,x,1.05,z);m.userData={kind:'station',id:station.id};pickables.push(m);cube(.14,.07,.035,0x60d9ff,x,1.05,z+.155);const beacon=new THREE.Mesh(new THREE.SphereGeometry(.055,12,8),new THREE.MeshBasicMaterial({color:station.id==='pack'?0xff5a7b:0x55ffba}));beacon.position.set(x,1.29,z);scene.add(beacon);m.userData.beacon=beacon}
+for(const person of PEOPLE){const x=person.x*1.8-.9,body=new THREE.Mesh(new THREE.SphereGeometry(.085,18,12),material(person.color,.4));body.position.set(x,1.05,.4);body.userData={kind:'worker',id:person.id};scene.add(body);pickables.push(body)}
+const info=document.createElement('div');Object.assign(info.style,{position:'absolute',top:'76px',left:'24px',maxWidth:'500px',padding:'12px 18px',background:'#09202bec',border:'1px solid #3b889a',borderRadius:'10px',color:'#dffaff',font:'600 15px system-ui',pointerEvents:'none'});stage.appendChild(info);
+function update(s){status.textContent=s;info.textContent=s}
+function choose(object){if(!object?.userData?.kind)return;const{kind,id}=object.userData;if(kind==='worker'){selected=id;update('Worker '+id.toUpperCase()+' selected. Select the red station.');return}if(!selected){update('Select a worker first.');return}game=assign(game,selected,id);selected=null;update(game.message);if(game.phase==='won'){object.material.color.set('#38ce99');object.userData.beacon.material.color.set('#55ffba')}}
+const ray=new THREE.Raycaster(),cursor=new THREE.Vector2();renderer.domElement.addEventListener('pointerdown',e=>{const r=renderer.domElement.getBoundingClientRect();cursor.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);ray.setFromCamera(cursor,camera);choose(ray.intersectObjects(pickables,false)[0]?.object)});
+const handFactory=new XRHandModelFactory(),hands=[];for(let i=0;i<2;i++){const hand=renderer.xr.getHand(i);hand.add(handFactory.createHandModel(hand,'mesh'));scene.add(hand);hands.push({hand,closed:false})}
+update('Select a worker orb then the red machine. Mouse clicks supported in desktop 3D preview.');
+if(navigator.xr&&await navigator.xr.isSessionSupported('immersive-vr').catch(()=>false)){const button=document.createElement('button');button.textContent='START IMMERSIVE VR';Object.assign(button.style,{position:'absolute',right:'24px',top:'76px',zIndex:3});stage.appendChild(button);button.onclick=async()=>{try{const session=await navigator.xr.requestSession('immersive-vr',{optionalFeatures:['hand-tracking','local-floor']});await renderer.xr.setSession(session);update('Pinch thumb and index finger near worker and station to select.')}catch(e){update('Immersive mode unavailable: '+e.message)}}}else update('Desktop 3D preview ready. Immersive mode requires a compatible XR runtime.');
+renderer.setAnimationLoop(()=>{if(renderer.xr.isPresenting){for(const state of hands){const tip=state.hand.joints?.['index-finger-tip'],thumb=state.hand.joints?.['thumb-tip'];if(!tip||!thumb||!tip.visible||!thumb.visible)continue;const p=tip.getWorldPosition(new THREE.Vector3()),distance=p.distanceTo(thumb.getWorldPosition(new THREE.Vector3())),closed=distance<.028;if(closed&&!state.closed){const nearest=pickables.map(obj=>({obj,d:obj.getWorldPosition(new THREE.Vector3()).distanceTo(p)})).sort((a,b)=>a.d-b.d)[0];if(nearest?.d<.22)choose(nearest.obj)}state.closed=closed}}else controls.update();renderer.render(scene,camera)});
+}
