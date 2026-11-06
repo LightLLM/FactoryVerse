@@ -1,0 +1,13 @@
+/** Pure deterministic simulation. No industrial system connections. */
+export const STATIONS=[{id:'cut',label:'CNC Cutting',skill:'cnc',x:.22,y:.49},{id:'assembly',label:'Assembly',skill:'assembly',x:.51,y:.34},{id:'pack',label:'Packaging',skill:'pack',x:.80,y:.51}];
+export const PEOPLE=[{id:'maya',name:'Maya',skill:['pack','assembly'],x:.19,y:.82,color:'#57d9ff'},{id:'leo',name:'Leo',skill:['cnc'],x:.43,y:.83,color:'#f6b75c'},{id:'sam',name:'Sam',skill:['assembly'],x:.64,y:.83,color:'#c6a5ff'}];
+export const MISSIONS=[
+{id:'absence',title:'The Missing Operator',subtitle:'Packaging has stopped. Restore production.',broken:'pack',initial:58,objective:'Assign a qualified available worker to Packaging'},
+{id:'cnc',title:'Precision Under Pressure',subtitle:'The CNC station needs a specialist.',broken:'cut',initial:42,objective:'Assign the CNC-qualified worker'},
+{id:'assembly',title:'Assembly Bottleneck',subtitle:'A critical assembly station is short staffed.',broken:'assembly',initial:61,objective:'Assign a qualified assembler'}];
+export function createGame(n=0){const index=((n%MISSIONS.length)+MISSIONS.length)%MISSIONS.length,mission=MISSIONS[index];return {index,mission,phase:'active',throughput:mission.initial,score:0,attempts:0,assignments:{},selected:null,message:'Click or pinch a worker, then the red station.',events:[{type:'mission',message:mission.title}]};}
+export const getWorker=id=>PEOPLE.find(p=>p.id===id)||null;
+export const getStation=id=>STATIONS.find(s=>s.id===id)||null;
+export const eligible=(worker,station)=>Boolean(worker&&station&&worker.skill.includes(station.skill));
+export function assign(g,personId,stationId){const p=getWorker(personId),s=getStation(stationId);if(!p||!s)return {...g,message:'Invalid worker or station.'};if(g.phase==='won')return g;const attempts=g.attempts+1;if(s.id!==g.mission.broken)return {...g,attempts,selected:null,message:'That station is already running. Choose the red station.',events:[...g.events,{type:'warning',message:'Wrong destination'}]};if(!eligible(p,s))return {...g,attempts,selected:null,message:p.name+' is not qualified for '+s.label+'. Choose a trained worker.',events:[...g.events,{type:'blocked',message:'Safety gate: '+p.name+' lacks '+s.skill+' qualification'}]};return {...g,attempts,selected:null,phase:'won',score:Math.max(50,100-(attempts-1)*15),throughput:100,assignments:{...g.assignments,[s.id]:p.id},message:'Recovery approved! '+p.name+' restored '+s.label+'.',events:[...g.events,{type:'approved',message:p.name+' assigned to '+s.label}]};}
+export function nextGame(g){return createGame(g.index+1);}
